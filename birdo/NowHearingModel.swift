@@ -64,6 +64,21 @@ final class NowHearingModel {
         backoff = .seconds(1)
         audioPlayer.stop()
 
+        // Expire lingering cards on our own clock: the server only sends
+        // pending events while something is being heard, so a quiet yard
+        // would otherwise leave departed cards stuck until the next bird.
+        let expiryTicker = Task { [weak self] in
+            while true {
+                do {
+                    try await Task.sleep(for: .seconds(1))
+                } catch {
+                    return
+                }
+                self?.expireLingeringCards()
+            }
+        }
+        defer { expiryTicker.cancel() }
+
         await seedRecentDetections()
         while !Task.isCancelled {
             do {
@@ -141,8 +156,19 @@ final class NowHearingModel {
             }
             let mergedIDs = Set(merged.map(\.id))
             firstSeen = firstSeen.filter { mergedIDs.contains($0.key) }
+            // Active cards on top (newest arrival first); lingering cards sink
+            // below them and age toward the bottom, so expiry always happens
+            // at the bottom edge of the list.
             merged.sort {
-                (firstSeen[$0.id] ?? $0.firstDetected) > (firstSeen[$1.id] ?? $1.firstDetected)
+                if $0.isLingering != $1.isLingering {
+                    return !$0.isLingering
+                }
+                if $0.isLingering {
+                    let d0 = departedAt[$0.id] ?? .distantPast
+                    let d1 = departedAt[$1.id] ?? .distantPast
+                    if d0 != d1 { return d0 > d1 }
+                }
+                return (firstSeen[$0.id] ?? $0.firstDetected) > (firstSeen[$1.id] ?? $1.firstDetected)
             }
             if merged != birds {
                 birds = merged
@@ -155,6 +181,21 @@ final class NowHearingModel {
             Task { await verifyAndRecord(detection) }
         default:
             break  // connected, heartbeat
+        }
+    }
+
+    private func expireLingeringCards() {
+        let now = Date()
+        let kept = birds.filter { bird in
+            guard bird.isLingering, let departed = departedAt[bird.id] else { return true }
+            if audioPlayer.currentKey == bird.id { return true }
+            if now.timeIntervalSince(departed) < Self.lingerInterval { return true }
+            departedAt.removeValue(forKey: bird.id)
+            firstSeen.removeValue(forKey: bird.id)
+            return false
+        }
+        if kept != birds {
+            birds = kept
         }
     }
 
