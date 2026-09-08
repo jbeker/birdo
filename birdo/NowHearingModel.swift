@@ -49,6 +49,8 @@ final class NowHearingModel {
     /// Sort position per card, pinned at first appearance — the server renews
     /// firstDetected every ~15s mid-song, which would otherwise reshuffle cards.
     @ObservationIgnored private var firstSeen: [String: TimeInterval] = [:]
+    /// Current visit number per bird/microphone (see PendingBird.visit).
+    @ObservationIgnored private var visitNumber: [String: Int] = [:]
 
     // MARK: - Connection loop
 
@@ -60,6 +62,7 @@ final class NowHearingModel {
         photoCredit = [:]
         departedAt = [:]
         firstSeen = [:]
+        visitNumber = [:]
         status = .connecting
         backoff = .seconds(1)
         audioPlayer.stop()
@@ -133,8 +136,19 @@ final class NowHearingModel {
         case "pending":
             guard let snapshot = try? decoder.decode([PendingBird].self, from: Data(event.data.utf8)) else { return }
             let now = Date()
-            var merged = snapshot
-            let liveIDs = Set(snapshot.map(\.id))
+            // A bird returning while its previous card is still lingering
+            // gets a fresh card (new visit); the dimmed one keeps aging
+            // toward expiry below it.
+            var merged: [PendingBird] = []
+            for var bird in snapshot {
+                bird.visit = visitNumber[bird.baseKey] ?? 0
+                if birds.first(where: { $0.id == bird.id })?.isLingering == true {
+                    bird.visit += 1
+                    visitNumber[bird.baseKey] = bird.visit
+                }
+                merged.append(bird)
+            }
+            let liveIDs = Set(merged.map(\.id))
             for id in liveIDs {
                 departedAt.removeValue(forKey: id)
             }

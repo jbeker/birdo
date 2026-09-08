@@ -24,6 +24,11 @@ struct PendingBird: Codable, Identifiable {
     /// the card is being held on screen for the linger window.
     var isLingering = false
 
+    /// Not from the server: bumped by the model when a bird returns while its
+    /// previous card is still lingering, so the return gets a fresh card
+    /// instead of re-brightening the dimmed one.
+    var visit = 0
+
     struct ModelContribution: Codable {
         var modelID: String
         var maxConfidence: Double
@@ -36,9 +41,8 @@ struct PendingBird: Codable, Identifiable {
 
     // Do NOT include firstDetected here: the server renews it every ~15s
     // mid-song, which would churn card identity (and eat button clicks).
-    // Separate visits still get separate cards because a card fully leaves
-    // once its linger window expires.
-    var id: String { "\(scientificName)|\(sourceID ?? source)" }
+    var baseKey: String { "\(scientificName)|\(sourceID ?? source)" }
+    var id: String { "\(baseKey)|\(visit)" }
 
     /// Best identification confidence across models, as a whole percentage.
     var confidencePercent: Int? {
@@ -57,6 +61,7 @@ extension PendingBird: Equatable {
             && lhs.source == rhs.source
             && lhs.status == rhs.status
             && lhs.isLingering == rhs.isLingering
+            && lhs.visit == rhs.visit
             && lhs.confidencePercent == rhs.confidencePercent
     }
 }
