@@ -4,6 +4,8 @@ A small native macOS app that shows which birds your [BirdNET-Go](https://github
 
 birdo mirrors the "currently hearing" section of the BirdNET-Go dashboard in a compact window you can leave in the corner of your screen. Each bird appears as a card with its photo, common and scientific names, and the microphone that heard it. A play button streams the recorded clip. When the yard is quiet, the app shows a simple "Listening…" state.
 
+![birdo showing three birds currently being heard](Screenshot.png)
+
 ## Features
 
 - **Live updates** over the BirdNET-Go server-sent event stream — no polling, no page refreshes
