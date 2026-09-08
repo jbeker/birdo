@@ -21,6 +21,7 @@ final class NowHearingModel {
     private(set) var status: ConnectionStatus = .connecting
     private(set) var latestDetectionID: [String: Int] = [:]  // scientificName -> detection id
     private(set) var photoCredit: [String: String] = [:]     // scientificName -> author
+    private(set) var speciesCode: [String: String] = [:]     // scientificName -> eBird code
 
     let audioPlayer = AudioPlayer()
 
@@ -60,6 +61,7 @@ final class NowHearingModel {
         birds = []
         latestDetectionID = [:]
         photoCredit = [:]
+        speciesCode = [:]
         departedAt = [:]
         firstSeen = [:]
         visitNumber = [:]
@@ -192,6 +194,9 @@ final class NowHearingModel {
             if let author = detection.birdImage?.authorName {
                 photoCredit[detection.scientificName] = author
             }
+            if let code = detection.speciesCode {
+                speciesCode[detection.scientificName] = code
+            }
             Task { await verifyAndRecord(detection) }
         default:
             break  // connected, heartbeat
@@ -254,6 +259,9 @@ final class NowHearingModel {
             if let author = detection.birdImage?.authorName {
                 photoCredit[detection.scientificName] = author
             }
+            if let code = detection.speciesCode {
+                speciesCode[detection.scientificName] = code
+            }
             if detection.id > (newest[detection.scientificName]?.id ?? 0) {
                 newest[detection.scientificName] = detection
             }
@@ -282,6 +290,21 @@ final class NowHearingModel {
 
     func imageURL(for bird: PendingBird) -> URL? {
         URL(string: bird.thumbnail, relativeTo: baseURL)
+    }
+
+    /// Species page to open from the card: eBird when we've learned the
+    /// species code from a detection, Wikipedia by scientific name otherwise.
+    func databaseURL(for bird: PendingBird) -> URL? {
+        if let code = speciesCode[bird.scientificName] {
+            return URL(string: "https://ebird.org/species/\(code)")
+        }
+        let page = bird.scientificName.replacingOccurrences(of: " ", with: "_")
+        guard let encoded = page.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) else { return nil }
+        return URL(string: "https://en.wikipedia.org/wiki/\(encoded)")
+    }
+
+    func databaseName(for bird: PendingBird) -> String {
+        speciesCode[bird.scientificName] != nil ? "eBird" : "Wikipedia"
     }
 
     // MARK: - Server validation

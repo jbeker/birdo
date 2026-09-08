@@ -70,6 +70,7 @@ extension PendingBird: Equatable {
 struct RecentDetection: Codable {
     var id: Int
     var scientificName: String
+    var speciesCode: String?
     var birdImage: BirdImage?
 
     struct BirdImage: Codable {

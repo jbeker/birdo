@@ -11,14 +11,14 @@ struct BirdCardView: View {
     let bird: PendingBird
 
     @Environment(NowHearingModel.self) private var model
+    @Environment(\.openURL) private var openURL
+    @State private var hoveringName = false
 
     var body: some View {
         HStack(spacing: 10) {
             thumbnail
             VStack(alignment: .leading, spacing: 2) {
-                Text(bird.species)
-                    .font(.headline)
-                    .lineLimit(1)
+                nameLink
                 Text(bird.scientificName)
                     .font(.caption)
                     .italic()
@@ -40,6 +40,29 @@ struct BirdCardView: View {
         .padding(10)
         .background(.thinMaterial, in: .rect(cornerRadius: 12))
         .opacity(bird.isLingering && !isPlaying ? 0.55 : 1)
+    }
+
+    private var nameLink: some View {
+        Button {
+            if let url = model.databaseURL(for: bird) {
+                openURL(url)
+            }
+        } label: {
+            HStack(spacing: 3) {
+                Text(bird.species)
+                    .font(.headline)
+                    .lineLimit(1)
+                Image(systemName: "arrow.up.forward")
+                    .font(.caption2.weight(.semibold))
+                    .opacity(hoveringName ? 1 : 0)
+            }
+            .foregroundStyle(hoveringName ? AnyShapeStyle(.tint) : AnyShapeStyle(.primary))
+        }
+        .buttonStyle(.plain)
+        .pointerStyle(.link)
+        .onHover { hoveringName = $0 }
+        .animation(.easeOut(duration: 0.12), value: hoveringName)
+        .help(String(localized: "View on \(model.databaseName(for: bird))"))
     }
 
     private var thumbnail: some View {
