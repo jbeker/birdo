@@ -20,9 +20,7 @@ struct ContentView: View {
     }
 
     private var mainContent: some View {
-        VStack(spacing: 0) {
-            HeaderBar(status: model.status)
-            Divider()
+        Group {
             if model.birds.isEmpty {
                 EmptyStateView(status: model.status, host: model.baseURL?.host() ?? "server")
             } else {
@@ -38,20 +36,27 @@ struct ContentView: View {
             }
         }
         .animation(.snappy, value: model.birds)
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            HStack {
+                Spacer()
+                StatusIndicator(status: model.status)
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 5)
+            .background(.bar)
+            .overlay(alignment: .top) { Divider() }
+        }
         .task(id: serverBaseURL) {
             await model.run()
         }
     }
 }
 
-private struct HeaderBar: View {
+private struct StatusIndicator: View {
     let status: NowHearingModel.ConnectionStatus
 
     var body: some View {
-        HStack {
-            Text("Now Hearing")
-                .font(.headline)
-            Spacer()
+        HStack(spacing: 5) {
             Circle()
                 .fill(statusColor)
                 .frame(width: 8, height: 8)
@@ -59,9 +64,6 @@ private struct HeaderBar: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
-        .background(.bar)
     }
 
     private var statusColor: Color {
