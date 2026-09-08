@@ -39,7 +39,7 @@ struct BirdCardView: View {
         }
         .padding(10)
         .background(.thinMaterial, in: .rect(cornerRadius: 12))
-        .opacity(bird.isLingering ? 0.55 : 1)
+        .opacity(bird.isLingering && !isPlaying ? 0.55 : 1)
     }
 
     private var thumbnail: some View {
@@ -72,10 +72,21 @@ struct BirdCardView: View {
         Button {
             model.togglePlayback(for: bird)
         } label: {
-            Label(isPlaying ? "Stop" : "Play latest clip",
-                  systemImage: isPlaying ? "stop.circle.fill" : "play.circle.fill")
-                .labelStyle(.iconOnly)
-                .font(.title2)
+            ZStack {
+                if isPlaying {
+                    Circle()
+                        .stroke(.quaternary, lineWidth: 2)
+                    Circle()
+                        .trim(from: 0, to: model.audioPlayer.progress)
+                        .stroke(.tint, style: StrokeStyle(lineWidth: 2, lineCap: .round))
+                        .rotationEffect(.degrees(-90))
+                }
+                Label(isPlaying ? "Stop" : "Play latest clip",
+                      systemImage: isPlaying ? "stop.circle.fill" : "play.circle.fill")
+                    .labelStyle(.iconOnly)
+                    .font(.title2)
+            }
+            .frame(width: 28, height: 28)
         }
         .buttonStyle(.borderless)
         .disabled(!model.clipAvailable(for: bird))
