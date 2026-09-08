@@ -24,16 +24,22 @@ struct BirdCardView: View {
                     .italic()
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
-                Label(bird.source, systemImage: "mic.fill")
-                    .font(.caption2)
-                    .foregroundStyle(.tertiary)
-                    .lineLimit(1)
+                HStack(spacing: 4) {
+                    Label(bird.source, systemImage: "mic.fill")
+                    if let percent = bird.confidencePercent {
+                        Text("· \(percent)%")
+                    }
+                }
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
+                .lineLimit(1)
             }
             Spacer(minLength: 4)
             playButton
         }
         .padding(10)
         .background(.thinMaterial, in: .rect(cornerRadius: 12))
+        .opacity(bird.isLingering ? 0.55 : 1)
     }
 
     private var thumbnail: some View {
@@ -79,6 +85,6 @@ struct BirdCardView: View {
     }
 
     private var isPlaying: Bool {
-        model.audioPlayer.currentKey == bird.scientificName
+        model.audioPlayer.currentKey == bird.id
     }
 }

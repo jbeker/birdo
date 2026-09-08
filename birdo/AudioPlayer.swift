@@ -13,7 +13,7 @@ final class AudioPlayer {
     private var player: AVPlayer?
     private var endWatcher: Task<Void, Never>?
 
-    /// Key (scientific name) of the clip currently playing, if any.
+    /// Key (bird card id) of the clip currently playing, if any.
     private(set) var currentKey: String?
 
     func toggle(url: URL, key: String) {

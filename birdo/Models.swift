@@ -18,18 +18,45 @@ struct PendingBird: Codable, Identifiable {
     var source: String           // display name, e.g. "Back Deck (Pi)"
     var sourceID: String?
     var hitCount: Int?
+    var modelContributions: [ModelContribution]?
 
-    var id: String { "\(scientificName)|\(sourceID ?? source)" }
+    /// Not from the server: set when the snapshot has dropped this bird but
+    /// the card is being held on screen for the linger window.
+    var isLingering = false
+
+    struct ModelContribution: Codable {
+        var modelID: String
+        var maxConfidence: Double
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case species, scientificName, thumbnail, status, firstDetected,
+             lastUpdated, source, sourceID, hitCount, modelContributions
+    }
+
+    // firstDetected is fixed for the life of one detection episode and
+    // changes when the bird returns, so each detection gets its own card.
+    var id: String { "\(scientificName)|\(sourceID ?? source)|\(Int(firstDetected))" }
+
+    /// Best identification confidence across models, as a whole percentage.
+    var confidencePercent: Int? {
+        modelContributions?.map(\.maxConfidence).max()
+            .map { Int(($0 * 100).rounded()) }
+    }
 }
 
 extension PendingBird: Equatable {
-    // Identity-only comparison: lastUpdated/hitCount churn on every ~1s snapshot
-    // and must not count as a change (would retrigger animations).
+    // Identity-plus-display comparison: lastUpdated/hitCount churn on every
+    // ~1s snapshot and must not count as a change (would retrigger
+    // animations), but shifts in what the card shows must.
     static func == (lhs: PendingBird, rhs: PendingBird) -> Bool {
         lhs.scientificName == rhs.scientificName
             && lhs.species == rhs.species
             && lhs.source == rhs.source
+            && lhs.firstDetected == rhs.firstDetected
             && lhs.status == rhs.status
+            && lhs.isLingering == rhs.isLingering
+            && lhs.confidencePercent == rhs.confidencePercent
     }
 }
 
