@@ -46,6 +46,9 @@ final class NowHearingModel {
     /// How long a card stays on screen after the server stops hearing the bird.
     private static let lingerInterval: TimeInterval = 10
     @ObservationIgnored private var departedAt: [String: Date] = [:]
+    /// Sort position per card, pinned at first appearance — the server renews
+    /// firstDetected every ~15s mid-song, which would otherwise reshuffle cards.
+    @ObservationIgnored private var firstSeen: [String: TimeInterval] = [:]
 
     // MARK: - Connection loop
 
@@ -56,6 +59,7 @@ final class NowHearingModel {
         latestDetectionID = [:]
         photoCredit = [:]
         departedAt = [:]
+        firstSeen = [:]
         status = .connecting
         backoff = .seconds(1)
         audioPlayer.stop()
@@ -132,7 +136,14 @@ final class NowHearingModel {
                     departedAt.removeValue(forKey: bird.id)
                 }
             }
-            merged.sort { $0.firstDetected > $1.firstDetected }
+            for bird in merged where firstSeen[bird.id] == nil {
+                firstSeen[bird.id] = bird.firstDetected
+            }
+            let mergedIDs = Set(merged.map(\.id))
+            firstSeen = firstSeen.filter { mergedIDs.contains($0.key) }
+            merged.sort {
+                (firstSeen[$0.id] ?? $0.firstDetected) > (firstSeen[$1.id] ?? $1.firstDetected)
+            }
             if merged != birds {
                 birds = merged
             }

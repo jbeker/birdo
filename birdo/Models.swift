@@ -34,9 +34,11 @@ struct PendingBird: Codable, Identifiable {
              lastUpdated, source, sourceID, hitCount, modelContributions
     }
 
-    // firstDetected is fixed for the life of one detection episode and
-    // changes when the bird returns, so each detection gets its own card.
-    var id: String { "\(scientificName)|\(sourceID ?? source)|\(Int(firstDetected))" }
+    // Do NOT include firstDetected here: the server renews it every ~15s
+    // mid-song, which would churn card identity (and eat button clicks).
+    // Separate visits still get separate cards because a card fully leaves
+    // once its linger window expires.
+    var id: String { "\(scientificName)|\(sourceID ?? source)" }
 
     /// Best identification confidence across models, as a whole percentage.
     var confidencePercent: Int? {
@@ -53,7 +55,6 @@ extension PendingBird: Equatable {
         lhs.scientificName == rhs.scientificName
             && lhs.species == rhs.species
             && lhs.source == rhs.source
-            && lhs.firstDetected == rhs.firstDetected
             && lhs.status == rhs.status
             && lhs.isLingering == rhs.isLingering
             && lhs.confidencePercent == rhs.confidencePercent
