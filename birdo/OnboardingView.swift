@@ -59,7 +59,7 @@ struct OnboardingView: View {
         isTesting = true
         Task {
             do {
-                let base = try await NowHearingModel.validate(serverURL: urlText)
+                let base = try await ServerValidation.validate(serverURL: urlText)
                 serverBaseURL = base.absoluteString  // flips the app to the main view
             } catch {
                 errorMessage = error.localizedDescription
