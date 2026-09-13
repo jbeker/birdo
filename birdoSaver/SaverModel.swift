@@ -31,7 +31,10 @@ final class SaverModel {
     }
 
     private(set) var cards: [Card] = []
-    private(set) var baseURL: URL?
+    /// Seeded at creation so the first render doesn't flash the
+    /// "configure me" message; re-read at every start() in case the
+    /// Options sheet changed it.
+    private(set) var baseURL: URL? = SaverDefaults.serverBaseURL
 
     private var canvasSize: CGSize = .zero
     @ObservationIgnored private var streamTask: Task<Void, Never>?
