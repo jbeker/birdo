@@ -84,3 +84,22 @@ struct ServerSentEvent {
     var name: String
     var data: String
 }
+
+/// One finalized detection as returned by GET /api/v2/detections (inside a
+/// paginated envelope) and GET /api/v2/detections/recent (bare array).
+nonisolated struct Detection: Codable, Identifiable {
+    var id: Int
+    var date: String          // YYYY-MM-DD, server local day
+    var time: String          // HH:MM:SS, server local time
+    var timestamp: String?    // RFC 3339 with offset; preferred when present
+    var scientificName: String
+    var commonName: String
+    var speciesCode: String?
+    var confidence: Double
+}
+
+/// Envelope around GET /api/v2/detections.
+nonisolated struct DetectionPage: Codable {
+    var data: [Detection]
+    var total: Int?
+}

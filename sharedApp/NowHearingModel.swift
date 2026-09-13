@@ -2,20 +2,17 @@
 //  NowHearingModel.swift
 //  birdo
 //
-//  Connects to the BirdNET-Go SSE stream and publishes the
-//  "currently hearing" snapshot plus playback state.
+//  Consumes the BirdNET-Go SSE stream and publishes the "currently hearing"
+//  snapshot plus playback state. Shared by the macOS and iOS apps.
 //
 
 import Foundation
 import Observation
 
+@MainActor
 @Observable
 final class NowHearingModel {
-    enum ConnectionStatus {
-        case connecting
-        case live
-        case reconnecting
-    }
+    typealias ConnectionStatus = DetectionStreamClient.Status
 
     private(set) var birds: [PendingBird] = []
     private(set) var status: ConnectionStatus = .connecting
@@ -26,23 +23,10 @@ final class NowHearingModel {
     let audioPlayer = AudioPlayer()
 
     /// Configured server, or nil until onboarding has saved one.
-    var baseURL: URL? {
-        guard let stored = UserDefaults.standard.string(forKey: "serverBaseURL"),
-              !stored.isEmpty else { return nil }
-        return URL(string: stored)
-    }
+    var baseURL: URL? { AppGroup.serverBaseURL }
 
-    private let session: URLSession = {
-        let config = URLSessionConfiguration.default
-        // Idle timeout doubles as a liveness watchdog: `pending` fires ~1/sec,
-        // so a dead connection errors out and triggers a reconnect.
-        config.timeoutIntervalForRequest = 90
-        config.timeoutIntervalForResource = .infinity
-        return URLSession(configuration: config)
-    }()
-
+    @ObservationIgnored private let session = URLSession(configuration: .default)
     @ObservationIgnored private let decoder = JSONDecoder()
-    @ObservationIgnored private var backoff: Duration = .seconds(1)
 
     /// How long a card stays on screen after the server stops hearing the bird.
     private static let lingerInterval: TimeInterval = 10
@@ -56,7 +40,7 @@ final class NowHearingModel {
     // MARK: - Connection loop
 
     func run() async {
-        guard baseURL != nil else { return }
+        guard let base = baseURL else { return }
         // Fresh start: run() is relaunched whenever the server URL changes.
         birds = []
         latestDetectionID = [:]
@@ -66,7 +50,6 @@ final class NowHearingModel {
         firstSeen = [:]
         visitNumber = [:]
         status = .connecting
-        backoff = .seconds(1)
         audioPlayer.stop()
 
         // Expire lingering cards on our own clock: the server only sends
@@ -85,122 +68,82 @@ final class NowHearingModel {
         defer { expiryTicker.cancel() }
 
         await seedRecentDetections()
-        while !Task.isCancelled {
-            do {
-                try await connectOnce()
-            } catch is CancellationError {
-                return
-            } catch {
-                // fall through to reconnect
-            }
-            if Task.isCancelled { return }
-            status = .reconnecting
-            try? await Task.sleep(for: backoff)
-            backoff = min(backoff * 2, .seconds(30))
+
+        let client = DetectionStreamClient(baseURL: base) { [weak self] snapshot in
+            self?.apply(snapshot: snapshot)
         }
+        client.onDetection = { [weak self] detection in
+            self?.record(detection)
+        }
+        client.onStatus = { [weak self] status in
+            self?.status = status
+        }
+        await client.run()
     }
 
-    private func connectOnce() async throws {
-        guard let url = URL(string: "/api/v2/detections/stream", relativeTo: baseURL) else {
-            throw URLError(.badURL)
-        }
-        var request = URLRequest(url: url)
-        request.setValue("text/event-stream", forHTTPHeaderField: "Accept")
-
-        let (bytes, response) = try await session.bytes(for: request)
-        guard (response as? HTTPURLResponse)?.statusCode == 200 else {
-            throw URLError(.badServerResponse)
-        }
-
-        // BirdNET-Go sends each event as an `event:` line followed by a single
-        // `data:` line. Dispatch on `data:` rather than blank-line delimiters,
-        // which AsyncLineSequence does not deliver reliably.
-        var currentEvent = "message"
-        for try await line in bytes.lines {
-            if line.hasPrefix("event:") {
-                currentEvent = line.dropFirst(6).trimmingCharacters(in: .whitespaces)
-            } else if line.hasPrefix("data:") {
-                let data = String(line.dropFirst(5)).trimmingCharacters(in: .whitespaces)
-                handle(ServerSentEvent(name: currentEvent, data: data))
-                currentEvent = "message"
+    private func apply(snapshot: [PendingBird]) {
+        let now = Date()
+        // A bird returning while its previous card is still lingering
+        // gets a fresh card (new visit); the dimmed one keeps aging
+        // toward expiry below it.
+        var merged: [PendingBird] = []
+        for var bird in snapshot {
+            bird.visit = visitNumber[bird.baseKey] ?? 0
+            if birds.first(where: { $0.id == bird.id })?.isLingering == true {
+                bird.visit += 1
+                visitNumber[bird.baseKey] = bird.visit
             }
+            merged.append(bird)
         }
-        throw URLError(.networkConnectionLost)  // stream ended; reconnect
-    }
-
-    private func handle(_ event: ServerSentEvent) {
-        if status != .live {
-            status = .live
+        let liveIDs = Set(merged.map(\.id))
+        for id in liveIDs {
+            departedAt.removeValue(forKey: id)
         }
-        backoff = .seconds(1)
-
-        switch event.name {
-        case "pending":
-            guard let snapshot = try? decoder.decode([PendingBird].self, from: Data(event.data.utf8)) else { return }
-            let now = Date()
-            // A bird returning while its previous card is still lingering
-            // gets a fresh card (new visit); the dimmed one keeps aging
-            // toward expiry below it.
-            var merged: [PendingBird] = []
-            for var bird in snapshot {
-                bird.visit = visitNumber[bird.baseKey] ?? 0
-                if birds.first(where: { $0.id == bird.id })?.isLingering == true {
-                    bird.visit += 1
-                    visitNumber[bird.baseKey] = bird.visit
-                }
+        // Hold departed cards for the linger window (dimmed), and for
+        // as long as their clip is playing.
+        for var bird in birds where !liveIDs.contains(bird.id) {
+            let departed = departedAt[bird.id] ?? now
+            departedAt[bird.id] = departed
+            if audioPlayer.currentKey == bird.id
+                || now.timeIntervalSince(departed) < Self.lingerInterval {
+                bird.isLingering = true
                 merged.append(bird)
+            } else {
+                departedAt.removeValue(forKey: bird.id)
             }
-            let liveIDs = Set(merged.map(\.id))
-            for id in liveIDs {
-                departedAt.removeValue(forKey: id)
-            }
-            // Hold departed cards for the linger window (dimmed), and for
-            // as long as their clip is playing.
-            for var bird in birds where !liveIDs.contains(bird.id) {
-                let departed = departedAt[bird.id] ?? now
-                departedAt[bird.id] = departed
-                if audioPlayer.currentKey == bird.id
-                    || now.timeIntervalSince(departed) < Self.lingerInterval {
-                    bird.isLingering = true
-                    merged.append(bird)
-                } else {
-                    departedAt.removeValue(forKey: bird.id)
-                }
-            }
-            for bird in merged where firstSeen[bird.id] == nil {
-                firstSeen[bird.id] = bird.firstDetected
-            }
-            let mergedIDs = Set(merged.map(\.id))
-            firstSeen = firstSeen.filter { mergedIDs.contains($0.key) }
-            // Active cards on top (newest arrival first); lingering cards sink
-            // below them and age toward the bottom, so expiry always happens
-            // at the bottom edge of the list.
-            merged.sort {
-                if $0.isLingering != $1.isLingering {
-                    return !$0.isLingering
-                }
-                if $0.isLingering {
-                    let d0 = departedAt[$0.id] ?? .distantPast
-                    let d1 = departedAt[$1.id] ?? .distantPast
-                    if d0 != d1 { return d0 > d1 }
-                }
-                return (firstSeen[$0.id] ?? $0.firstDetected) > (firstSeen[$1.id] ?? $1.firstDetected)
-            }
-            if merged != birds {
-                birds = merged
-            }
-        case "detection":
-            guard let detection = try? decoder.decode(RecentDetection.self, from: Data(event.data.utf8)) else { return }
-            if let author = detection.birdImage?.authorName {
-                photoCredit[detection.scientificName] = author
-            }
-            if let code = detection.speciesCode {
-                speciesCode[detection.scientificName] = code
-            }
-            Task { await verifyAndRecord(detection) }
-        default:
-            break  // connected, heartbeat
         }
+        for bird in merged where firstSeen[bird.id] == nil {
+            firstSeen[bird.id] = bird.firstDetected
+        }
+        let mergedIDs = Set(merged.map(\.id))
+        firstSeen = firstSeen.filter { mergedIDs.contains($0.key) }
+        // Active cards on top (newest arrival first); lingering cards sink
+        // below them and age toward the bottom, so expiry always happens
+        // at the bottom edge of the list.
+        merged.sort {
+            if $0.isLingering != $1.isLingering {
+                return !$0.isLingering
+            }
+            if $0.isLingering {
+                let d0 = departedAt[$0.id] ?? .distantPast
+                let d1 = departedAt[$1.id] ?? .distantPast
+                if d0 != d1 { return d0 > d1 }
+            }
+            return (firstSeen[$0.id] ?? $0.firstDetected) > (firstSeen[$1.id] ?? $1.firstDetected)
+        }
+        if merged != birds {
+            birds = merged
+        }
+    }
+
+    private func record(_ detection: RecentDetection) {
+        if let author = detection.birdImage?.authorName {
+            photoCredit[detection.scientificName] = author
+        }
+        if let code = detection.speciesCode {
+            speciesCode[detection.scientificName] = code
+        }
+        Task { await verifyAndRecord(detection) }
     }
 
     private func expireLingeringCards() {
@@ -219,7 +162,7 @@ final class NowHearingModel {
     }
 
     /// Records a detection id only once its clip actually answers on the
-    /// server — the WAV is written a few seconds after the detection event,
+    /// server — the clip is written a few seconds after the detection event,
     /// and enabling the play button early makes it silently do nothing.
     private func verifyAndRecord(_ detection: RecentDetection) async {
         guard let base = baseURL,

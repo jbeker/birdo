@@ -2,7 +2,7 @@
 //  BirdCardView.swift
 //  birdo
 //
-//  One card for a bird currently being heard.
+//  One card for a bird currently being heard. Shared by macOS and iOS.
 //
 
 import SwiftUI
@@ -54,15 +54,25 @@ struct BirdCardView: View {
                     .lineLimit(1)
                 Image(systemName: "arrow.up.forward")
                     .font(.caption2.weight(.semibold))
-                    .opacity(hoveringName ? 1 : 0)
+                    .opacity(linkArrowOpacity)
             }
             .foregroundStyle(hoveringName ? AnyShapeStyle(.tint) : AnyShapeStyle(.primary))
         }
         .buttonStyle(.plain)
+        #if os(macOS)
         .pointerStyle(.link)
         .onHover { hoveringName = $0 }
         .animation(.easeOut(duration: 0.12), value: hoveringName)
+        #endif
         .help(String(localized: "View on \(model.databaseName(for: bird))"))
+    }
+
+    private var linkArrowOpacity: Double {
+        #if os(macOS)
+        hoveringName ? 1 : 0
+        #else
+        0.4  // no hover on touch; keep a faint hint that the name is a link
+        #endif
     }
 
     private var thumbnail: some View {

@@ -2,20 +2,41 @@
 //  ContentView.swift
 //  birdo
 //
-//  Created by Jeremy Beker on 9/8/26.
+//  Live list of birds currently being heard. Shared by macOS and iOS.
 //
 
 import SwiftUI
 
 struct ContentView: View {
     @Environment(NowHearingModel.self) private var model
-    @AppStorage("serverBaseURL") private var serverBaseURL = ""
+    @AppStorage(AppGroup.serverURLKey, store: AppGroup.defaults) private var serverBaseURL = ""
+    #if os(iOS)
+    @State private var showingSettings = false
+    #endif
 
     var body: some View {
         if serverBaseURL.isEmpty {
             OnboardingView()
         } else {
+            #if os(iOS)
+            NavigationStack {
+                mainContent
+                    .navigationTitle("Now Hearing")
+                    .navigationBarTitleDisplayMode(.inline)
+                    .toolbar {
+                        ToolbarItem(placement: .topBarTrailing) {
+                            Button("Settings", systemImage: "gearshape") {
+                                showingSettings = true
+                            }
+                        }
+                    }
+                    .sheet(isPresented: $showingSettings) {
+                        IOSSettingsView()
+                    }
+            }
+            #else
             mainContent
+            #endif
         }
     }
 

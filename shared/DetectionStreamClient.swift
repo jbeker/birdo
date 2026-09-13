@@ -2,16 +2,25 @@
 //  DetectionStreamClient.swift
 //  birdo
 //
-//  Minimal client for the BirdNET-Go SSE stream: decodes `pending`
-//  snapshots and hands them to a callback. Used by the screen saver;
-//  the app keeps its richer NowHearingModel.
+//  Client for the BirdNET-Go SSE stream: decodes `pending` snapshots and
+//  `detection` events and hands them to main-actor callbacks. Shared by the
+//  app model and the screen saver.
 //
 
 import Foundation
 
 final class DetectionStreamClient {
+    enum Status {
+        case connecting
+        case live
+        case reconnecting
+    }
+
     let baseURL: URL
     let onSnapshot: @MainActor ([PendingBird]) -> Void
+    /// Finalized detections, when the consumer cares about clip IDs and credits.
+    var onDetection: (@MainActor (RecentDetection) -> Void)?
+    var onStatus: (@MainActor (Status) -> Void)?
 
     init(baseURL: URL, onSnapshot: @escaping @MainActor ([PendingBird]) -> Void) {
         self.baseURL = baseURL
@@ -34,6 +43,7 @@ final class DetectionStreamClient {
     /// Returns only when the surrounding task is cancelled.
     func run() async {
         var backoff: Duration = .seconds(1)
+        await report(.connecting)
         while !Task.isCancelled {
             do {
                 try await connectOnce(resetBackoff: { backoff = .seconds(1) })
@@ -43,9 +53,15 @@ final class DetectionStreamClient {
                 // fall through to reconnect
             }
             if Task.isCancelled { return }
+            await report(.reconnecting)
             try? await Task.sleep(for: backoff)
             backoff = min(backoff * 2, .seconds(30))
         }
+    }
+
+    private func report(_ status: Status) async {
+        guard let onStatus else { return }
+        await MainActor.run { onStatus(status) }
     }
 
     private func connectOnce(resetBackoff: () -> Void) async throws {
@@ -64,16 +80,29 @@ final class DetectionStreamClient {
         // `data:` line. Dispatch on `data:` rather than blank-line delimiters,
         // which AsyncLineSequence does not deliver reliably.
         var currentEvent = "message"
+        var announcedLive = false
         for try await line in bytes.lines {
             resetBackoff()
+            if !announcedLive {
+                announcedLive = true
+                await report(.live)
+            }
             if line.hasPrefix("event:") {
                 currentEvent = line.dropFirst(6).trimmingCharacters(in: .whitespaces)
             } else if line.hasPrefix("data:") {
-                let data = String(line.dropFirst(5)).trimmingCharacters(in: .whitespaces)
-                if currentEvent == "pending",
-                   let snapshot = try? decoder.decode([PendingBird].self, from: Data(data.utf8)) {
-                    let onSnapshot = onSnapshot
-                    await MainActor.run { onSnapshot(snapshot) }
+                let data = Data(String(line.dropFirst(5)).trimmingCharacters(in: .whitespaces).utf8)
+                switch currentEvent {
+                case "pending":
+                    if let snapshot = try? decoder.decode([PendingBird].self, from: data) {
+                        let onSnapshot = onSnapshot
+                        await MainActor.run { onSnapshot(snapshot) }
+                    }
+                case "detection":
+                    if let onDetection, let detection = try? decoder.decode(RecentDetection.self, from: data) {
+                        await MainActor.run { onDetection(detection) }
+                    }
+                default:
+                    break  // connected, heartbeat
                 }
                 currentEvent = "message"
             }

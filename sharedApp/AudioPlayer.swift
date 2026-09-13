@@ -2,12 +2,13 @@
 //  AudioPlayer.swift
 //  birdo
 //
-//  Streams a detection's WAV clip; one clip at a time.
+//  Streams a detection's audio clip; one clip at a time.
 //
 
 import AVFoundation
 import Observation
 
+@MainActor
 @Observable
 final class AudioPlayer {
     private var player: AVPlayer?
@@ -25,6 +26,11 @@ final class AudioPlayer {
             return
         }
         stop()
+        #if os(iOS)
+        // Play through the speaker even with the ring switch on silent.
+        try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .default)
+        try? AVAudioSession.sharedInstance().setActive(true)
+        #endif
         let item = AVPlayerItem(url: url)
         let player = AVPlayer(playerItem: item)
         self.player = player
@@ -62,5 +68,8 @@ final class AudioPlayer {
         player = nil
         currentKey = nil
         progress = 0
+        #if os(iOS)
+        try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+        #endif
     }
 }

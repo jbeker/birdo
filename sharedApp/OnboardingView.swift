@@ -3,12 +3,16 @@
 //  birdo
 //
 //  First-launch setup: explains the app and collects a working server URL.
+//  Shared by macOS and iOS.
 //
 
 import SwiftUI
+#if os(iOS)
+import WidgetKit
+#endif
 
 struct OnboardingView: View {
-    @AppStorage("serverBaseURL") private var serverBaseURL = ""
+    @AppStorage(AppGroup.serverURLKey, store: AppGroup.defaults) private var serverBaseURL = ""
 
     @State private var urlText = ""
     @State private var isTesting = false
@@ -25,10 +29,7 @@ struct OnboardingView: View {
             Text("birdo shows which birds your BirdNET-Go station is hearing right now — live species cards with photos, the microphone that heard them, and playback of the recorded clips.")
                 .multilineTextAlignment(.center)
                 .foregroundStyle(.secondary)
-            TextField("Server URL", text: $urlText, prompt: Text(verbatim: "https://birdnet.example.com"))
-                .textFieldStyle(.roundedBorder)
-                .disabled(isTesting)
-                .onSubmit(connect)
+            serverField
             if let errorMessage {
                 Text(errorMessage)
                     .font(.caption)
@@ -50,7 +51,21 @@ struct OnboardingView: View {
             Spacer()
         }
         .padding(24)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .frame(maxWidth: 480, maxHeight: .infinity)
+        .frame(maxWidth: .infinity)
+    }
+
+    private var serverField: some View {
+        TextField("Server URL", text: $urlText, prompt: Text(verbatim: "https://birdnet.example.com"))
+            .textFieldStyle(.roundedBorder)
+            .disabled(isTesting)
+            .onSubmit(connect)
+            #if os(iOS)
+            .keyboardType(.URL)
+            .textContentType(.URL)
+            .textInputAutocapitalization(.never)
+            .autocorrectionDisabled()
+            #endif
     }
 
     private func connect() {
@@ -61,6 +76,9 @@ struct OnboardingView: View {
             do {
                 let base = try await ServerValidation.validate(serverURL: urlText)
                 serverBaseURL = base.absoluteString  // flips the app to the main view
+                #if os(iOS)
+                WidgetCenter.shared.reloadAllTimelines()
+                #endif
             } catch {
                 errorMessage = error.localizedDescription
             }
