@@ -2,54 +2,73 @@
 //  BirdCardView.swift
 //  birdo
 //
-//  One card for a bird currently being heard. Shared by macOS and iOS.
+//  Card layout shared by the live list and the Today list, plus the card for
+//  a bird currently being heard. Shared by macOS and iOS.
 //
 
 import SwiftUI
 
-struct BirdCardView: View {
-    let bird: PendingBird
+/// Photo, linked common name, scientific name, a caption line, and a
+/// trailing accessory. The two lists differ only in the last two.
+struct BirdCard<Detail: View, Trailing: View>: View {
+    let commonName: String
+    let scientificName: String
+    let imageURL: URL?
+    let linkURL: URL?
+    let linkSiteName: String
+    let photoCredit: String
+    var dimmed = false
+    let detail: Detail
+    let trailing: Trailing
 
-    @Environment(NowHearingModel.self) private var model
     @Environment(\.openURL) private var openURL
     @State private var hoveringName = false
+
+    init(commonName: String, scientificName: String, imageURL: URL?, linkURL: URL?,
+         linkSiteName: String, photoCredit: String, dimmed: Bool = false,
+         @ViewBuilder detail: () -> Detail, @ViewBuilder trailing: () -> Trailing) {
+        self.commonName = commonName
+        self.scientificName = scientificName
+        self.imageURL = imageURL
+        self.linkURL = linkURL
+        self.linkSiteName = linkSiteName
+        self.photoCredit = photoCredit
+        self.dimmed = dimmed
+        self.detail = detail()
+        self.trailing = trailing()
+    }
 
     var body: some View {
         HStack(spacing: 10) {
             thumbnail
             VStack(alignment: .leading, spacing: 2) {
                 nameLink
-                Text(bird.scientificName)
+                Text(scientificName)
                     .font(.caption)
                     .italic()
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
-                HStack(spacing: 4) {
-                    Label(bird.source, systemImage: "mic.fill")
-                    if let percent = bird.confidencePercent {
-                        Text("· \(percent)%")
-                    }
-                }
-                .font(.caption2)
-                .foregroundStyle(.tertiary)
-                .lineLimit(1)
+                detail
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+                    .lineLimit(1)
             }
             Spacer(minLength: 4)
-            playButton
+            trailing
         }
         .padding(10)
         .background(.thinMaterial, in: .rect(cornerRadius: 12))
-        .opacity(bird.isLingering && !isPlaying ? 0.55 : 1)
+        .opacity(dimmed ? 0.55 : 1)
     }
 
     private var nameLink: some View {
         Button {
-            if let url = model.databaseURL(for: bird) {
-                openURL(url)
+            if let linkURL {
+                openURL(linkURL)
             }
         } label: {
             HStack(spacing: 3) {
-                Text(bird.species)
+                Text(commonName)
                     .font(.headline)
                     .lineLimit(1)
                 Image(systemName: "arrow.up.forward")
@@ -64,7 +83,7 @@ struct BirdCardView: View {
         .onHover { hoveringName = $0 }
         .animation(.easeOut(duration: 0.12), value: hoveringName)
         #endif
-        .help(String(localized: "View on \(model.databaseName(for: bird))"))
+        .help(String(localized: "View on \(linkSiteName)"))
     }
 
     private var linkArrowOpacity: Double {
@@ -76,7 +95,7 @@ struct BirdCardView: View {
     }
 
     private var thumbnail: some View {
-        AsyncImage(url: model.imageURL(for: bird)) { image in
+        AsyncImage(url: imageURL) { image in
             image
                 .resizable()
                 .scaledToFill()
@@ -91,6 +110,34 @@ struct BirdCardView: View {
         .frame(width: 56, height: 56)
         .clipShape(.rect(cornerRadius: 10))
         .help(photoCredit)
+    }
+}
+
+/// One card for a bird currently being heard.
+struct BirdCardView: View {
+    let bird: PendingBird
+
+    @Environment(NowHearingModel.self) private var model
+
+    var body: some View {
+        BirdCard(
+            commonName: bird.species,
+            scientificName: bird.scientificName,
+            imageURL: model.imageURL(for: bird),
+            linkURL: model.databaseURL(for: bird),
+            linkSiteName: model.databaseName(for: bird),
+            photoCredit: photoCredit,
+            dimmed: bird.isLingering && !isPlaying
+        ) {
+            HStack(spacing: 4) {
+                Label(bird.source, systemImage: "mic.fill")
+                if let percent = bird.confidencePercent {
+                    Text("· \(percent)%")
+                }
+            }
+        } trailing: {
+            playButton
+        }
     }
 
     private var photoCredit: String {

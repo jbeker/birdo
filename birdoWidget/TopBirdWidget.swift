@@ -293,19 +293,19 @@ struct TopBirdWidgetView: View {
 
     // MARK: - Lock Screen
 
+    // Every family must adopt containerBackground, or WidgetKit replaces the
+    // view with a "Please adopt containerBackground API" placeholder.
     private var circular: some View {
-        ZStack {
-            AccessoryWidgetBackground()
-            VStack(spacing: -2) {
-                Image(systemName: "bird.fill")
-                    .font(.title3)
-                if let headline = entry.headline, entry.state == .ranked {
-                    Text("\(headline.count)")
-                        .font(.caption.bold().monospacedDigit())
-                }
+        VStack(spacing: -2) {
+            Image(systemName: "bird.fill")
+                .font(.title3)
+            if let headline = entry.headline, entry.state == .ranked {
+                Text("\(headline.count)")
+                    .font(.caption.bold().monospacedDigit())
             }
-            .widgetAccentable()
         }
+        .widgetAccentable()
+        .containerBackground(for: .widget) { AccessoryWidgetBackground() }
     }
 
     private var rectangular: some View {
@@ -336,6 +336,7 @@ struct TopBirdWidgetView: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        .containerBackground(for: .widget) { }
     }
 
     private var inline: some View {
@@ -350,6 +351,7 @@ struct TopBirdWidgetView: View {
                 Label(messageTitle, systemImage: messageSymbol)
             }
         }
+        .containerBackground(for: .widget) { }
     }
 
     // MARK: - Text

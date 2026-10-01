@@ -2,7 +2,8 @@
 //  ContentView.swift
 //  birdo
 //
-//  Live list of birds currently being heard. Shared by macOS and iOS.
+//  Tabs for the live "Now Hearing" list and the "Today" summary. Shared by
+//  macOS and iOS.
 //
 
 import SwiftUI
@@ -18,29 +19,81 @@ struct ContentView: View {
         if serverBaseURL.isEmpty {
             OnboardingView()
         } else {
-            #if os(iOS)
-            NavigationStack {
-                mainContent
-                    .navigationTitle("Now Hearing")
-                    .navigationBarTitleDisplayMode(.inline)
-                    .toolbar {
-                        ToolbarItem(placement: .topBarTrailing) {
-                            Button("Settings", systemImage: "gearshape") {
-                                showingSettings = true
-                            }
-                        }
-                    }
-                    .sheet(isPresented: $showingSettings) {
-                        IOSSettingsView()
-                    }
-            }
-            #else
-            mainContent
-            #endif
+            tabs
+                // The stream belongs to the tab container, not the Now Hearing
+                // tab: a task on the tab's content would be cancelled every
+                // time the Today tab is selected.
+                .task(id: serverBaseURL) {
+                    await model.run()
+                }
         }
     }
 
-    private var mainContent: some View {
+    private var tabs: some View {
+        #if os(iOS)
+        TabView {
+            Tab("Now Hearing", systemImage: "waveform") {
+                NavigationStack {
+                    NowHearingView()
+                        .navigationTitle("Now Hearing")
+                        .navigationBarTitleDisplayMode(.inline)
+                        .toolbar { settingsToolbar }
+                }
+            }
+            Tab("Today", systemImage: "chart.bar") {
+                NavigationStack {
+                    TodayView()
+                        .navigationTitle("Today")
+                        .navigationBarTitleDisplayMode(.inline)
+                        .toolbar { settingsToolbar }
+                }
+            }
+        }
+        .tabViewBottomAccessory {
+            StatusIndicator(status: model.status)
+                .padding(.horizontal, 12)
+        }
+        .sheet(isPresented: $showingSettings) {
+            IOSSettingsView()
+        }
+        #else
+        TabView {
+            Tab("Now Hearing", systemImage: "waveform") {
+                NowHearingView()
+            }
+            Tab("Today", systemImage: "chart.bar") {
+                TodayView()
+            }
+        }
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            HStack {
+                Spacer()
+                StatusIndicator(status: model.status)
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 5)
+            .background(.bar)
+            .overlay(alignment: .top) { Divider() }
+        }
+        #endif
+    }
+
+    #if os(iOS)
+    private var settingsToolbar: some ToolbarContent {
+        ToolbarItem(placement: .topBarTrailing) {
+            Button("Settings", systemImage: "gearshape") {
+                showingSettings = true
+            }
+        }
+    }
+    #endif
+}
+
+/// Live list of birds currently being heard.
+struct NowHearingView: View {
+    @Environment(NowHearingModel.self) private var model
+
+    var body: some View {
         Group {
             if model.birds.isEmpty {
                 EmptyStateView(status: model.status, host: model.baseURL?.host() ?? "server")
@@ -57,19 +110,6 @@ struct ContentView: View {
             }
         }
         .animation(.snappy, value: model.birds)
-        .safeAreaInset(edge: .bottom, spacing: 0) {
-            HStack {
-                Spacer()
-                StatusIndicator(status: model.status)
-            }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 5)
-            .background(.bar)
-            .overlay(alignment: .top) { Divider() }
-        }
-        .task(id: serverBaseURL) {
-            await model.run()
-        }
     }
 }
 
@@ -137,5 +177,6 @@ private struct EmptyStateView: View {
 #Preview {
     ContentView()
         .environment(NowHearingModel())
-        .frame(width: 340, height: 440)
+        .environment(DailySummaryModel())
+        .frame(width: 360, height: 480)
 }

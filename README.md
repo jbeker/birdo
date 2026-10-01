@@ -2,7 +2,7 @@
 
 A small native macOS and iOS app that shows which birds your [BirdNET-Go](https://github.com/tphakala/birdnet-go) station is hearing right now.
 
-birdo mirrors the "currently hearing" section of the BirdNET-Go dashboard in a compact window you can leave in the corner of your screen. Each bird appears as a card with its photo, common and scientific names, and the microphone that heard it. A play button streams the recorded clip. When the yard is quiet, the app shows a simple "Listening…" state.
+birdo mirrors the "currently hearing" section of the BirdNET-Go dashboard in a compact window you can leave in the corner of your screen. Each bird appears as a card with its photo, common and scientific names, and the microphone that heard it. A play button streams the recorded clip. When the yard is quiet, the app shows a simple "Listening…" state. A second tab, **Today**, lists every species heard so far today with its detection count.
 
 ![birdo showing three birds currently being heard](Screenshot.png)
 
@@ -11,6 +11,7 @@ birdo mirrors the "currently hearing" section of the BirdNET-Go dashboard in a c
 - **Live updates** over the BirdNET-Go server-sent event stream — no polling, no page refreshes
 - **One card per active bird**, with photo, names, and audio source; cards animate in and out as birds start and stop singing
 - **Clip playback**: hear the actual recording that triggered each detection
+- **Today tab**: every species heard today, most detections first, with the time each was last heard; refreshes once a minute and within seconds of each new detection
 - **Connection status** at a glance, with automatic reconnection and backoff
 - **Native SwiftUI** throughout — no webview
 - **iOS companion** with the same live list, plus a **"Most Heard" widget** for the Home Screen, Lock Screen, and StandBy
@@ -41,7 +42,7 @@ The widget reads the server URL from an App Group shared with the app, so add th
 
 ## How it works
 
-birdo talks to five BirdNET-Go v2 API endpoints:
+birdo talks to six BirdNET-Go v2 API endpoints:
 
 | Endpoint | Purpose |
 |---|---|
@@ -50,12 +51,13 @@ birdo talks to five BirdNET-Go v2 API endpoints:
 | `GET /api/v2/audio/{id}` | Recorded clip for a detection |
 | `GET /api/v2/detections/recent` | Seeds clip IDs at launch |
 | `GET /api/v2/detections?queryType=hourly` | Widget: detections for the hours covering its window |
+| `GET /api/v2/analytics/species/daily` | Today tab: per-species counts for the current day |
 
 The Mac app is sandboxed with only the outgoing-network entitlement; the iOS app and widget share an App Group for the server URL and cached species photos. Bird photos come from your BirdNET-Go server, which sources them from providers such as [Avicommons](https://avicommons.org); hover over a photo to see its credit.
 
 ## Tests
 
-`sharedTests` covers the widget's window and ranking logic without a server:
+`sharedTests` covers the widget's window and ranking logic and the Today tab's query helpers without a server:
 
 ```sh
 xcodebuild -project birdo.xcodeproj -scheme sharedTests -destination 'platform=macOS' test

@@ -103,3 +103,27 @@ nonisolated struct DetectionPage: Codable {
     var data: [Detection]
     var total: Int?
 }
+
+/// One species row from GET /api/v2/analytics/species/daily?date=YYYY-MM-DD:
+/// the whole day's detections for that species, already aggregated.
+nonisolated struct DailySpeciesSummary: Codable, Identifiable, Equatable {
+    var scientificName: String
+    var commonName: String
+    var speciesCode: String?
+    var count: Int
+    var maxConfidence: Double?
+    var latestHeard: String?      // HH:MM:SS, server local time
+    var thumbnailURL: String?     // relative path, already percent-encoded
+
+    var id: String { scientificName }
+
+    enum CodingKeys: String, CodingKey {
+        case scientificName = "scientific_name"
+        case commonName = "common_name"
+        case speciesCode = "species_code"
+        case count
+        case maxConfidence = "max_confidence"
+        case latestHeard = "latest_heard"
+        case thumbnailURL = "thumbnail_url"
+    }
+}

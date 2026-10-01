@@ -19,6 +19,9 @@ final class NowHearingModel {
     private(set) var latestDetectionID: [String: Int] = [:]  // scientificName -> detection id
     private(set) var photoCredit: [String: String] = [:]     // scientificName -> author
     private(set) var speciesCode: [String: String] = [:]     // scientificName -> eBird code
+    /// Finalized detections seen on this connection. Views that show
+    /// aggregates watch it to know when to refetch.
+    private(set) var detectionTally = 0
 
     let audioPlayer = AudioPlayer()
 
@@ -143,6 +146,7 @@ final class NowHearingModel {
         if let code = detection.speciesCode {
             speciesCode[detection.scientificName] = code
         }
+        detectionTally += 1
         Task { await verifyAndRecord(detection) }
     }
 
@@ -238,15 +242,10 @@ final class NowHearingModel {
     /// Species page to open from the card: eBird when we've learned the
     /// species code from a detection, Wikipedia by scientific name otherwise.
     func databaseURL(for bird: PendingBird) -> URL? {
-        if let code = speciesCode[bird.scientificName] {
-            return URL(string: "https://ebird.org/species/\(code)")
-        }
-        let page = bird.scientificName.replacingOccurrences(of: " ", with: "_")
-        guard let encoded = page.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) else { return nil }
-        return URL(string: "https://en.wikipedia.org/wiki/\(encoded)")
+        SpeciesLink.url(scientificName: bird.scientificName, speciesCode: speciesCode[bird.scientificName])
     }
 
     func databaseName(for bird: PendingBird) -> String {
-        speciesCode[bird.scientificName] != nil ? "eBird" : "Wikipedia"
+        SpeciesLink.siteName(speciesCode: speciesCode[bird.scientificName])
     }
 }

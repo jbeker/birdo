@@ -13,11 +13,13 @@ import WidgetKit
 struct BirdoiOSApp: App {
     @Environment(\.scenePhase) private var scenePhase
     @State private var model = NowHearingModel()
+    @State private var daily = DailySummaryModel()
 
     var body: some Scene {
         WindowGroup {
             ContentView()
                 .environment(model)
+                .environment(daily)
         }
         .onChange(of: scenePhase) { _, phase in
             if phase == .background {
