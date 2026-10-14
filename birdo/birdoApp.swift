@@ -13,28 +13,49 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         true
     }
 
-    func applicationDidFinishLaunching(_ notification: Notification) {
+    func applicationWillFinishLaunching(_ notification: Notification) {
         // AppleScript's `launch application` sends an ascr/noop event instead
         // of the usual oapp event. AppKit treats that as "start without opening
         // windows", so SwiftUI skips presenting the WindowGroup even with
-        // defaultLaunchBehavior(.presented). Detect that launch type and ask
-        // the app to reopen itself, which is the same path a Dock click takes.
-        guard let event = NSAppleEventManager.shared().currentAppleEvent,
-              event.eventClass == Self.appleScriptSuite,
-              event.eventID == Self.launchEvent
-        else { return }
+        // defaultLaunchBehavior(.presented). The event is not available as
+        // NSAppleEventManager.currentAppleEvent in the launch callbacks, so
+        // register a handler for it directly.
+        NSAppleEventManager.shared().setEventHandler(
+            self,
+            andSelector: #selector(handleLaunchEvent(_:withReply:)),
+            forEventClass: Self.appleScriptSuite,
+            andEventID: Self.launchEvent
+        )
+    }
 
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        launchLog("didFinishLaunching visible=\(visibleWindowCount)")
+    }
+
+    @objc private func handleLaunchEvent(_ event: NSAppleEventDescriptor, withReply reply: NSAppleEventDescriptor) {
+        launchLog("received launch event visible=\(visibleWindowCount)")
+        // Let launch finish, then ask the app to reopen itself if it still has
+        // no window. That is the same path a Dock click takes.
         DispatchQueue.main.async {
-            guard !NSApp.windows.contains(where: \.isVisible) else { return }
-            let me = NSAppleEventDescriptor(processIdentifier: ProcessInfo.processInfo.processIdentifier)
-            let reopen = NSAppleEventDescriptor(
-                eventClass: AEEventClass(kCoreEventClass),
-                eventID: AEEventID(kAEReopenApplication),
-                targetDescriptor: me,
-                returnID: AEReturnID(kAutoGenerateReturnID),
-                transactionID: AETransactionID(kAnyTransactionID)
-            )
-            _ = try? reopen.sendEvent(options: .noReply, timeout: 0)
+            guard self.visibleWindowCount == 0 else { return }
+            self.reopenSelf()
+        }
+    }
+
+    private func reopenSelf() {
+        let me = NSAppleEventDescriptor(processIdentifier: ProcessInfo.processInfo.processIdentifier)
+        let reopen = NSAppleEventDescriptor(
+            eventClass: AEEventClass(kCoreEventClass),
+            eventID: AEEventID(kAEReopenApplication),
+            targetDescriptor: me,
+            returnID: AEReturnID(kAutoGenerateReturnID),
+            transactionID: AETransactionID(kAnyTransactionID)
+        )
+        do {
+            _ = try reopen.sendEvent(options: .noReply, timeout: 0)
+            launchLog("sent reopen; visible=\(visibleWindowCount)")
+        } catch {
+            launchLog("reopen send failed: \(error)")
         }
     }
 
@@ -44,6 +65,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private static func fourCharCode(_ s: String) -> AEEventClass {
         s.utf8.reduce(0) { ($0 << 8) | AEEventClass($1) }
+    }
+
+    private var visibleWindowCount: Int {
+        NSApp.windows.filter(\.isVisible).count
+    }
+
+    /// Debug-only launch trail, written to the sandbox tmp directory
+    /// (~/Library/Containers/com.picosphere.birdo/Data/tmp/birdo_launch.log).
+    private func launchLog(_ message: String) {
+        #if DEBUG
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("birdo_launch.log")
+        let line = "\(Date()) pid=\(ProcessInfo.processInfo.processIdentifier) \(message)\n"
+        if let handle = try? FileHandle(forWritingTo: url) {
+            handle.seekToEndOfFile()
+            handle.write(Data(line.utf8))
+            try? handle.close()
+        } else {
+            try? line.write(to: url, atomically: true, encoding: .utf8)
+        }
+        #endif
     }
 }
 
